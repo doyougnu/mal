@@ -25,6 +25,8 @@
             openssl
             pkg-config
             rust-bin.nightly.latest.default
+            rust-analyzer
+            rustfmt
           ];
 
           shellHook = ''
