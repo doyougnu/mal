@@ -1,11 +1,8 @@
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
 
-mod constants;
-mod step0_repl;
-
-use constants::HISTORY;
-use step0_repl::{eval, print, read};
+use rlisp::constants::HISTORY;
+use rlisp::{eval, print, read};
 
 fn main() -> Result<()> {
     let mut rl = DefaultEditor::new()?;
@@ -26,7 +23,7 @@ fn main() -> Result<()> {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())?;
                 let result = eval(line);
-                print(result);
+                println!("{}", result);
             }
         };
     }
