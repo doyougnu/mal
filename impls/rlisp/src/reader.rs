@@ -4,11 +4,12 @@ use nom::{
     character::complete::{char, digit1, multispace0, newline},
     combinator::{map, map_res, opt, value},
     multi::{many1, separated_list0},
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, preceded, separated_pair, terminated},
     IResult, Parser,
 };
 
-use crate::types::Expr;
+use crate::types::{Expr, MalVal};
+use std::collections::HashMap;
 
 // honestly I feel like the parser combinators are way more hassle than they are
 // worth. I think doing a pratt parser by scratch would be easier to write and
@@ -18,7 +19,10 @@ use crate::types::Expr;
 pub fn parse_expr(input: &str) -> IResult<&str, Expr> {
     let the_parser = alt((
         parse_list,
+        parse_vector,
+        parse_hashmap,
         parse_symbol,
+        parse_keyword,
         parse_string,
         parse_number,
         parse_quasi,
@@ -43,8 +47,22 @@ fn parse_symbol(input: &str) -> IResult<&str, Expr> {
     preceded(
         ws_or_comma,
         map(
-            take_while1(|c: char| !c.is_whitespace() && !"()~`'\",".contains(c)),
+            take_while1(|c: char| !c.is_whitespace() && !"[]:(){}~`'\",".contains(c)),
             |s: &str| Expr::symbol(s.to_string()),
+        ),
+    )
+    .parse(input)
+}
+
+fn parse_keyword(input: &str) -> IResult<&str, Expr> {
+    preceded(
+        ws_or_comma,
+        preceded(
+            char(':'),
+            map(
+                take_while1(|c: char| !c.is_whitespace() && !"[]:(){}~`'\",".contains(c)),
+                |s: &str| Expr::keyword(s.to_string()),
+            ),
         ),
     )
     .parse(input)
@@ -97,7 +115,53 @@ fn parse_list(input: &str) -> IResult<&str, Expr> {
             inner,
             preceded(ws_or_comma, char(')')),
         ),
-        Expr::List,
+        Expr::list,
+    )
+    .parse(input)
+}
+
+fn parse_vector(input: &str) -> IResult<&str, Expr> {
+    let inner = separated_list0(ws_or_comma, parse_expr);
+    map(
+        delimited(
+            preceded(ws_or_comma, char('[')),
+            inner,
+            preceded(ws_or_comma, char(']')),
+        ),
+        Expr::vector,
+    )
+    .parse(input)
+}
+
+fn parse_hashmap(input: &str) -> IResult<&str, Expr> {
+    let p_val = alt((parse_number, parse_symbol, parse_string, parse_keyword));
+    let inner = preceded(
+        ws_or_comma,
+        separated_list0(
+            ws_or_comma,
+            delimited(
+                ws_or_comma,
+                separated_pair(p_val, ws_or_comma, parse_expr),
+                ws_or_comma,
+            ),
+        ),
+    );
+
+    map(
+        delimited(char('{'), inner, char('}')),
+        |pairs: Vec<(Expr, Expr)>| {
+            let mut map = HashMap::new();
+            for (k, v) in pairs {
+                let key: MalVal = match k {
+                    Expr::Value(v) => v,
+                    _ => {
+                        panic!("impossible: parsed a malval, but it wasn't a val!");
+                    }
+                };
+                map.insert(key, Box::new(v));
+            }
+            Expr::HashMap(map)
+        },
     )
     .parse(input)
 }

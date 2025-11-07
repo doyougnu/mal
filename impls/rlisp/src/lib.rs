@@ -4,7 +4,7 @@ pub mod constants;
 pub mod reader;
 pub mod types;
 
-use crate::types::{Expr, MalVal, QuoteKind};
+use crate::types::{ContainerKind, Expr, MalVal, QuoteKind};
 use constants::HISTORY;
 
 pub fn read(rl: &mut DefaultEditor) -> Result<String> {
@@ -33,9 +33,20 @@ pub fn print(expr: &Expr) -> String {
             QuoteKind::Unquote => format!("(unquote {})", print(expr)),
             QuoteKind::SpliceUnquote => format!("(splice-unquote {})", print(expr)),
         },
-        Expr::List(exprs) => {
-            let result = exprs.iter().map(|e| print(e)).collect::<Vec<_>>().join(" ");
-            format!("({})", result)
+        Expr::Container(tag, es) => {
+            let res = es.iter().map(print).collect::<Vec<_>>().join(" ");
+            match tag {
+                ContainerKind::List => format!("({})", res),
+                ContainerKind::Vec => format!("[{}]", res),
+            }
+        }
+        Expr::HashMap(hmap) => {
+            let res = hmap
+                .iter()
+                .map(|(k, v)| format!("{} {}", k, v))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("{{{}}}", res)
         }
     }
 }

@@ -1,12 +1,24 @@
 use nom::error::{ErrorKind, FromExternalError, ParseError};
 use nom::lib::std::fmt;
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MalVal {
     Number(i64),
     Symbol(String),
     String(String),
     Keyword(String),
+}
+
+impl fmt::Display for MalVal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MalVal::Number(n) => write!(f, "{}", n),
+            MalVal::Symbol(s) => write!(f, "{}", s),
+            MalVal::String(s) => write!(f, "\"{}\"", s),
+            MalVal::Keyword(k) => write!(f, ":{}", k),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,10 +30,51 @@ pub enum QuoteKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ContainerKind {
+    List,
+    Vec,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Value(MalVal),
-    List(Vec<Expr>),
+    Container(ContainerKind, Vec<Expr>),
+    HashMap(HashMap<MalVal, Box<Expr>>),
     Quoted(QuoteKind, Box<Expr>),
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Value(v) => write!(f, "{}", v),
+            Expr::Container(k, e) => {
+                let ls = e
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                match k {
+                    ContainerKind::List => write!(f, "({})", ls),
+                    ContainerKind::Vec => write!(f, "[{}]", ls),
+                }
+            }
+            Expr::HashMap(hmap) => {
+                let smap = hmap
+                    .iter()
+                    .map(|(k, v)| format!("{} {}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                write!(f, "{{{}}}", smap)
+            }
+            Expr::Quoted(k, e) => match k {
+                QuoteKind::Quote => write!(f, "(quote {})", e),
+                QuoteKind::Unquote => write!(f, "(unquote {})", e),
+                QuoteKind::Quasi => write!(f, "(quasiquote {})", e),
+                QuoteKind::SpliceUnquote => write!(f, "(splice-unquote {})", e),
+            },
+        }
+    }
 }
 
 impl Expr {
@@ -42,7 +95,15 @@ impl Expr {
     }
 
     pub fn list(es: Vec<Expr>) -> Self {
-        Expr::List(es)
+        Expr::Container(ContainerKind::List, es)
+    }
+
+    pub fn vector(es: Vec<Expr>) -> Self {
+        Expr::Container(ContainerKind::Vec, es)
+    }
+
+    pub fn hash_map(es: HashMap<MalVal, Box<Expr>>) -> Self {
+        Expr::HashMap(es)
     }
 
     pub fn quote(expr: Expr) -> Self {
