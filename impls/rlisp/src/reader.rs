@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, is_not, tag, take_till, take_while1},
-    character::complete::{char, digit1, multispace0, newline},
+    character::complete::{char, digit1, multispace0, multispace1, newline},
     combinator::{map, map_res, opt, value},
     multi::{many1, separated_list0},
     sequence::{delimited, preceded, separated_pair, terminated},
@@ -29,7 +29,6 @@ pub fn parse_expr(input: &str) -> IResult<&str, Expr> {
         parse_quote,
         parse_splice_unquote, // must be before unquote because ~ ambiguity
         parse_unquote,
-        // parse_comment,
     ));
 
     // preceded(ws_or_comment, the_parser).parse(input)
@@ -176,5 +175,11 @@ fn parse_comment(input: &str) -> IResult<&str, ()> {
 
 // many1 is needed so that the first parser can fail, many0 always succeeds
 fn ws_or_comma(input: &str) -> IResult<&str, ()> {
-    alt((value((), many1(char(','))), value((), multispace0))).parse(input)
+    let p_comments = preceded(multispace1, parse_comment);
+    alt((
+        value((), many1(char(','))),
+        value((), multispace0),
+        value((), p_comments),
+    ))
+    .parse(input)
 }

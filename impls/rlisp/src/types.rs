@@ -1,4 +1,3 @@
-use nom::error::{ErrorKind, FromExternalError, ParseError};
 use nom::lib::std::fmt;
 use std::collections::HashMap;
 
@@ -8,6 +7,38 @@ pub enum MalVal {
     Symbol(String),
     String(String),
     Keyword(String),
+}
+
+impl MalVal {
+    pub fn number(n: i64) -> Self {
+        MalVal::Number(n)
+    }
+
+    pub fn symbol(s: String) -> Self {
+        MalVal::Symbol(s)
+    }
+
+    pub fn string(s: String) -> Self {
+        MalVal::String(s)
+    }
+
+    pub fn keyword(s: String) -> Self {
+        MalVal::Keyword(s)
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            MalVal::Number(i) => *i,
+        }
+    }
+
+    pub fn as_string(&self) -> String {
+        match self {
+            MalVal::Symbol(i) => *i,
+            MalVal::String(i) => *i,
+            MalVal::Keyword(i) => *i,
+        }
+    }
 }
 
 impl fmt::Display for MalVal {
@@ -79,19 +110,19 @@ impl fmt::Display for Expr {
 
 impl Expr {
     pub fn number(n: i64) -> Self {
-        Expr::Value(MalVal::Number(n))
+        Expr::Value(MalVal::number(n))
     }
 
     pub fn symbol(s: String) -> Self {
-        Expr::Value(MalVal::Symbol(s))
+        Expr::Value(MalVal::symbol(s))
     }
 
     pub fn string(s: String) -> Self {
-        Expr::Value(MalVal::String(s))
+        Expr::Value(MalVal::string(s))
     }
 
     pub fn keyword(s: String) -> Self {
-        Expr::Value(MalVal::Keyword(s))
+        Expr::Value(MalVal::keyword(s))
     }
 
     pub fn list(es: Vec<Expr>) -> Self {
@@ -124,36 +155,9 @@ impl Expr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum MalError<I> {
-    Nom(nom::error::Error<I>),
-    UnbalancedParens,
-    Other(I),
+pub enum BuiltInOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
-
-impl<I: std::fmt::Debug, E> FromExternalError<I, E> for MalError<I> {
-    fn from_external_error(input: I, _kind: nom::error::ErrorKind, _e: E) -> Self {
-        MalError::Other(input)
-    }
-}
-
-impl<I> ParseError<I> for MalError<I> {
-    fn from_error_kind(input: I, kind: ErrorKind) -> Self {
-        MalError::Nom(nom::error::Error::new(input, kind))
-    }
-
-    fn append(_input: I, _kind: ErrorKind, other: Self) -> Self {
-        other
-    }
-}
-
-impl<I: fmt::Display> fmt::Display for MalError<I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MalError::Nom(e) => write!(f, "Parse error at: {}", e.input),
-            MalError::UnbalancedParens => write!(f, "Unbalanced parentheses"),
-            MalError::Other(msg) => write!(f, "{}", msg),
-        }
-    }
-}
-
-impl<I: fmt::Debug + fmt::Display> std::error::Error for MalError<I> {}
