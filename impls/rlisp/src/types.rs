@@ -29,14 +29,16 @@ impl MalVal {
     pub fn as_i64(&self) -> i64 {
         match self {
             MalVal::Number(i) => *i,
+            _ => panic!("as_i64: panic!!"),
         }
     }
 
     pub fn as_string(&self) -> String {
         match self {
-            MalVal::Symbol(i) => *i,
-            MalVal::String(i) => *i,
-            MalVal::Keyword(i) => *i,
+            MalVal::Symbol(i) => i.clone(),
+            MalVal::String(i) => i.clone(),
+            MalVal::Keyword(i) => i.clone(),
+            MalVal::Number(i) => i.to_string(),
         }
     }
 }
@@ -151,6 +153,12 @@ impl Expr {
 
     pub fn splice_unquote(expr: Expr) -> Self {
         Expr::Quoted(QuoteKind::SpliceUnquote, Box::new(expr))
+    }
+    pub fn as_i64(expr: &Expr) -> i64 {
+        match expr {
+            Expr::Value(v) => v.as_i64(),
+            _ => panic! {"Expr.as_i64: impossible"},
+        }
     }
 }
 
