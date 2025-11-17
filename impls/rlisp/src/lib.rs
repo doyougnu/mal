@@ -44,6 +44,7 @@ where
 
 // todo: use Result
 pub fn eval(input: &Expr) -> Expr {
+    println!("expr: {:?}", input);
     match input {
         Expr::Quoted(_tag, _expr) => panic!("Eval: Quoted: not implemented"),
 

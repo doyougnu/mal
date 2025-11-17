@@ -27,9 +27,12 @@ impl MalVal {
     }
 
     pub fn as_i64(&self) -> i64 {
+        let die = |s: &str, v: &String| panic!("as_i64: panic: {} {}", s, v);
         match self {
             MalVal::Number(i) => *i,
-            _ => panic!("as_i64: panic!!"),
+            MalVal::Symbol(i) => die("Got Symbol", i),
+            MalVal::String(i) => die("Got String", i),
+            MalVal::Keyword(i) => die("Got Keyword", i),
         }
     }
 

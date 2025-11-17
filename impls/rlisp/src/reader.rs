@@ -18,13 +18,13 @@ use std::collections::HashMap;
 /// Parse a Scheme expression.
 pub fn parse_expr(input: &str) -> IResult<&str, Expr> {
     let the_parser = alt((
+        parse_number, // must be before symbol or else literals parse to syms
+        parse_string,
+        parse_symbol,
+        parse_keyword,
         parse_list,
         parse_vector,
         parse_hashmap,
-        parse_symbol,
-        parse_keyword,
-        parse_string,
-        parse_number,
         parse_quasi,
         parse_quote,
         parse_splice_unquote, // must be before unquote because ~ ambiguity
