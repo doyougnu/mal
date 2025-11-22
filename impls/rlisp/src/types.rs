@@ -1,9 +1,43 @@
 use nom::lib::std::fmt;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MalError {
+    UnknownIdent(String),
+    SyntaxError(String),
+    NotAFun(String),
+    Other(String),
+}
+
+impl MalError {
+    pub fn unknown_ident(s: &str) -> Self {
+        MalError::UnknownIdent(String::from(s))
+    }
+    pub fn syntax_error(s: &str) -> Self {
+        MalError::SyntaxError(String::from(s))
+    }
+    pub fn other_error(s: &str) -> Self {
+        MalError::Other(String::from(s))
+    }
+    pub fn not_afun_error<T>(s: &str) -> MalResult<T> {
+        Err(MalError::NotAFun(String::from(s)))
+    }
+}
+
+// type synonym over result
+pub type MalResult<T> = Result<T, MalError>;
+
+// From automatically converts from &MalError to MalError via clone
+impl From<&MalError> for MalError {
+    fn from(e: &MalError) -> Self {
+        e.clone()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MalVal {
     Number(i64),
+    BSymbol(BuiltIn), // built in
     Symbol(String),
     String(String),
     Keyword(String),
@@ -16,6 +50,10 @@ impl MalVal {
 
     pub fn symbol(s: String) -> Self {
         MalVal::Symbol(s)
+    }
+
+    pub fn builtin_symbol(s: BuiltIn) -> Self {
+        MalVal::BSymbol(s)
     }
 
     pub fn string(s: String) -> Self {
@@ -31,6 +69,7 @@ impl MalVal {
         match self {
             MalVal::Number(i) => *i,
             MalVal::Symbol(i) => die("Got Symbol", i),
+            MalVal::BSymbol(i) => die("Got BSymbol", &format!("{:?}", i)),
             MalVal::String(i) => die("Got String", i),
             MalVal::Keyword(i) => die("Got Keyword", i),
         }
@@ -39,6 +78,7 @@ impl MalVal {
     pub fn as_string(&self) -> String {
         match self {
             MalVal::Symbol(i) => i.clone(),
+            MalVal::BSymbol(i) => format!("{:?}", i),
             MalVal::String(i) => i.clone(),
             MalVal::Keyword(i) => i.clone(),
             MalVal::Number(i) => i.to_string(),
@@ -51,6 +91,7 @@ impl fmt::Display for MalVal {
         match self {
             MalVal::Number(n) => write!(f, "{}", n),
             MalVal::Symbol(s) => write!(f, "{}", s),
+            MalVal::BSymbol(s) => write!(f, "{}", format!("{:?}", s)),
             MalVal::String(s) => write!(f, "\"{}\"", s),
             MalVal::Keyword(k) => write!(f, ":{}", k),
         }
@@ -122,6 +163,10 @@ impl Expr {
         Expr::Value(MalVal::symbol(s))
     }
 
+    pub fn builtin_symbol(s: BuiltIn) -> Self {
+        Expr::Value(MalVal::builtin_symbol(s))
+    }
+
     pub fn string(s: String) -> Self {
         Expr::Value(MalVal::string(s))
     }
@@ -165,10 +210,22 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum BuiltInOp {
+#[repr(usize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BuiltIn {
     Add,
     Sub,
     Mul,
     Div,
+}
+
+impl fmt::Display for BuiltIn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuiltIn::Add => write!(f, "+"),
+            BuiltIn::Sub => write!(f, "-"),
+            BuiltIn::Div => write!(f, "/"),
+            BuiltIn::Mul => write!(f, "*"),
+        }
+    }
 }

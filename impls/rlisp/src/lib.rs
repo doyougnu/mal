@@ -4,7 +4,7 @@ pub mod constants;
 pub mod reader;
 pub mod types;
 
-use crate::types::{ContainerKind, Expr, MalVal, QuoteKind};
+use crate::types::*;
 use constants::HISTORY;
 
 fn add(l: i64, r: i64) -> i64 {
@@ -23,7 +23,12 @@ fn mul(l: i64, r: i64) -> i64 {
     l * r
 }
 
-static OP_TABLE: [fn(i64, i64) -> i64; 4] = [add, sub, div, mul];
+static OP_TABLE: [(fn(i64, i64) -> i64, fn(&Expr) -> i64, fn(i64) -> Expr); 4] = [
+    (add, Expr::as_i64, Expr::number),
+    (sub, Expr::as_i64, Expr::number),
+    (mul, Expr::as_i64, Expr::number),
+    (div, Expr::as_i64, Expr::number),
+];
 
 pub fn read(rl: &mut DefaultEditor) -> Result<String> {
     if rl.load_history(HISTORY).is_err() {
@@ -32,55 +37,82 @@ pub fn read(rl: &mut DefaultEditor) -> Result<String> {
     rl.readline("user> ")
 }
 
-fn apply_all<'a, T, Accum, Project, I>(iter: I, f: Accum, g: Project) -> Option<T>
+fn apply_all<'a, T, Accum, Project, I>(iter: I, f: Accum, g: Project) -> MalResult<T>
 where
-    I: Iterator<Item = &'a Expr>,
+    I: Iterator<Item = &'a MalResult<Expr>>,
     Accum: Fn(T, T) -> T,
+    T: Copy,
     Project: Fn(&Expr) -> T,
 {
-    let mut iter1 = iter.map(g);
-    iter1.next().map(|first| iter1.fold(first, f))
+    // Convert &Result<Expr> → Result<T>
+    // This uses ? to stop early on the first error.
+    let mut mapped = iter.map(|r| {
+        let expr = r.as_ref()?; // go from &Result<Expr> to &Expr
+        Ok::<T, MalError>(g(expr))
+    });
+
+    // Extract the first value (needed for fold)
+    let first = mapped
+        .next()
+        .ok_or_else(|| MalError::other_error("apply_all: no args!"))??;
+
+    // Fold the remaining values
+    mapped.try_fold(first, |acc, t| {
+        let v = t?;
+        Ok::<T, MalError>(f(acc, v))
+    })
 }
 
-// todo: use Result
-pub fn eval(input: &Expr) -> Expr {
+pub fn eval_as_fun(
+    expr: Expr,
+) -> MalResult<(
+    // TODO: make a better type for this
+    fn(i64, i64) -> i64,
+    for<'a> fn(&'a types::Expr) -> i64,
+    fn(i64) -> types::Expr,
+)> {
+    // DESIGN: should evalAsFun know about OP_TABLE, or should eval?
+    match expr {
+        Expr::Value(MalVal::BSymbol(s)) => Ok(OP_TABLE[s as usize]),
+        Expr::Value(MalVal::Symbol(s)) => panic!("{}: Not implemented yet!", s),
+        other => MalError::not_afun_error(&format!("got: {}. Not a function", other)),
+    }
+}
+
+pub fn eval(input: &Expr) -> MalResult<Expr> {
+    #[cfg(debug_assertions)]
     println!("expr: {:?}", input);
-    match input {
+
+    let result = match input {
         Expr::Quoted(_tag, _expr) => panic!("Eval: Quoted: not implemented"),
 
         Expr::Container(tag, es) => {
             match tag {
                 ContainerKind::List => match es.first() {
                     Some(fun) => {
-                        let sym: &str = &eval(fun).to_string();
-                        let (prim_idx, project, inject) = match sym {
-                            "+" => (0, Expr::as_i64, Expr::number),
-                            "-" => (1, Expr::as_i64, Expr::number),
-                            "\\" => (2, Expr::as_i64, Expr::number),
-                            "*" => (3, Expr::as_i64, Expr::number),
-                            _ => panic!("Not Builtin!!"),
-                        };
-                        let prim_fn = OP_TABLE[prim_idx];
+                        // START: change this to call evalAsFun and make that function
+                        let sym = eval(fun)?;
+                        let (prim_fn, project, inject) = eval_as_fun(sym)?;
                         let args = &es[1..es.len()];
                         // the recursive call
                         let prim_args = args.iter().map(|a| eval(a)).collect::<Vec<_>>();
                         let payload = apply_all(prim_args.iter(), prim_fn, project);
+
                         // now rebox based on the types
-                        match payload {
-                            Some(result) => inject(result),
-                            None => panic!("No result!"),
-                        }
+                        payload.map(inject)
                     }
                     None => {
-                        panic!("idk what here");
+                        // empty list
+                        Ok(Expr::list(vec![]))
                     }
                 },
                 ContainerKind::Vec => panic!("Eval: Vec: not implemented"),
             }
         }
         Expr::HashMap(_hmap) => panic!("Eval: HashMap: not implemented"),
-        val => val.clone(),
-    }
+        val => Ok(val.clone()),
+    };
+    result
 }
 
 pub fn print(expr: &Expr) -> String {
@@ -89,6 +121,7 @@ pub fn print(expr: &Expr) -> String {
             MalVal::Number(n) => format!("{}", n),
             MalVal::String(s) => format!("\"{}\"", s.clone()),
             MalVal::Symbol(s) => s.clone(),
+            MalVal::BSymbol(s) => format!("{}", s),
             MalVal::Keyword(k) => format!(":{}", k.clone()),
         },
         Expr::Quoted(tag, expr) => match tag {

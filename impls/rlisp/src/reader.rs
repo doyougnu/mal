@@ -2,13 +2,13 @@ use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, is_not, tag, take_till, take_while1},
     character::complete::{char, digit1, multispace0, multispace1, newline},
-    combinator::{map, map_res, opt, value},
+    combinator::{map, opt, value},
     multi::{many1, separated_list0},
     sequence::{delimited, preceded, separated_pair, terminated},
     IResult, Parser,
 };
 
-use crate::types::{Expr, MalVal};
+use crate::types::{Expr, MalVal,BuiltIn};
 use std::collections::HashMap;
 
 // honestly I feel like the parser combinators are way more hassle than they are
@@ -36,10 +36,21 @@ pub fn parse_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 fn parse_number(input: &str) -> IResult<&str, Expr> {
-    map_res(preceded(ws_or_comma, digit1), |s: &str| {
-        s.parse::<i64>().map(Expr::number)
-    })
-    .parse(input)
+    // Optionally parse a minus sign
+    let (input, sign) = opt(char('-')).parse(input)?;
+
+    // Parse the digits
+    let (input, digits) = digit1(input)?;
+
+    // Convert the digits to an i32
+    let mut num = digits.parse::<i64>().unwrap();
+
+    // Apply the sign if present
+    if let Some('-') = sign {
+        num = -num;
+    }
+
+    Ok((input, Expr::number(num)))
 }
 
 fn parse_symbol(input: &str) -> IResult<&str, Expr> {
@@ -47,7 +58,15 @@ fn parse_symbol(input: &str) -> IResult<&str, Expr> {
         ws_or_comma,
         map(
             take_while1(|c: char| !c.is_whitespace() && !"[]:(){}~`'\",".contains(c)),
-            |s: &str| Expr::symbol(s.to_string()),
+            |s: &str|
+match s {
+    "+" => Expr::builtin_symbol(BuiltIn::Add),
+    "-" => Expr::builtin_symbol(BuiltIn::Sub),
+    "/" => Expr::builtin_symbol(BuiltIn::Div),
+    "*" => Expr::builtin_symbol(BuiltIn::Mul),
+    other => Expr::symbol(other.to_string()),
+
+},
         ),
     )
     .parse(input)

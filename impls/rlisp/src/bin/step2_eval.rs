@@ -31,7 +31,10 @@ fn main() -> Result<()> {
                     Ok((_, expr)) => {
                         //  parser returns rest of input which should be empty
                         let result = eval(&expr);
-                        println!("{}", print(&result));
+                        match result {
+                            Ok(r) => println!("{}", print(&r)),
+                            Err(e) => println!("{:?}", e),
+                        }
                     }
                 }
             }
