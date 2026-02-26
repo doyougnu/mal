@@ -8,7 +8,7 @@ use nom::{
     IResult, Parser,
 };
 
-use crate::types::{Expr, MalVal,BuiltIn};
+use crate::types::{BuiltIn, Expr, MalVal};
 use std::collections::HashMap;
 
 // honestly I feel like the parser combinators are way more hassle than they are
@@ -58,15 +58,13 @@ fn parse_symbol(input: &str) -> IResult<&str, Expr> {
         ws_or_comma,
         map(
             take_while1(|c: char| !c.is_whitespace() && !"[]:(){}~`'\",".contains(c)),
-            |s: &str|
-match s {
-    "+" => Expr::builtin_symbol(BuiltIn::Add),
-    "-" => Expr::builtin_symbol(BuiltIn::Sub),
-    "/" => Expr::builtin_symbol(BuiltIn::Div),
-    "*" => Expr::builtin_symbol(BuiltIn::Mul),
-    other => Expr::symbol(other.to_string()),
-
-},
+            |s: &str| match s {
+                "+" => Expr::builtin_symbol(BuiltIn::Add),
+                "-" => Expr::builtin_symbol(BuiltIn::Sub),
+                "/" => Expr::builtin_symbol(BuiltIn::Div),
+                "*" => Expr::builtin_symbol(BuiltIn::Mul),
+                other => Expr::symbol(other.to_string()),
+            },
         ),
     )
     .parse(input)
@@ -178,7 +176,7 @@ fn parse_hashmap(input: &str) -> IResult<&str, Expr> {
                 };
                 map.insert(key, Box::new(v));
             }
-            Expr::HashMap(map)
+            Expr::hash_map(map)
         },
     )
     .parse(input)

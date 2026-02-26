@@ -7,27 +7,35 @@ pub mod types;
 use crate::types::*;
 use constants::HISTORY;
 
-fn add(l: i64, r: i64) -> i64 {
-    l + r
+fn add(l: Expr, r: Expr) -> MalResult<Expr> {
+    let li = l.as_i64()?;
+    let lr = r.as_i64()?;
+    Ok(Expr::number(li + lr))
 }
 
-fn sub(l: i64, r: i64) -> i64 {
-    l - r
+fn sub(l: Expr, r: Expr) -> MalResult<Expr> {
+    let li = l.as_i64()?;
+    let lr = r.as_i64()?;
+    Ok(Expr::number(li - lr))
 }
 
-fn div(l: i64, r: i64) -> i64 {
-    l / r
+fn div(l: Expr, r: Expr) -> MalResult<Expr> {
+    let li = l.as_i64()?;
+    let lr = r.as_i64()?;
+    Ok(Expr::number(li / lr))
 }
 
-fn mul(l: i64, r: i64) -> i64 {
-    l * r
+fn mul(l: Expr, r: Expr) -> MalResult<Expr> {
+    let li = l.as_i64()?;
+    let lr = r.as_i64()?;
+    Ok(Expr::number(li * lr))
 }
 
-static OP_TABLE: [(fn(i64, i64) -> i64, fn(&Expr) -> i64, fn(i64) -> Expr); 4] = [
-    (add, Expr::as_i64, Expr::number),
-    (sub, Expr::as_i64, Expr::number),
-    (mul, Expr::as_i64, Expr::number),
-    (div, Expr::as_i64, Expr::number),
+static OP_TABLE: [Builtin; 4] = [
+    Builtin::Binary(add),
+    Builtin::Binary(sub),
+    Builtin::Binary(mul),
+    Builtin::Binary(div),
 ];
 
 pub fn read(rl: &mut DefaultEditor) -> Result<String> {
@@ -37,81 +45,79 @@ pub fn read(rl: &mut DefaultEditor) -> Result<String> {
     rl.readline("user> ")
 }
 
-fn apply_all<'a, T, Accum, Project, I>(iter: I, f: Accum, g: Project) -> MalResult<T>
-where
-    I: Iterator<Item = &'a MalResult<Expr>>,
-    Accum: Fn(T, T) -> T,
-    T: Copy,
-    Project: Fn(&Expr) -> T,
-{
-    // Convert &Result<Expr> → Result<T>
-    // This uses ? to stop early on the first error.
-    let mut mapped = iter.map(|r| {
-        let expr = r.as_ref()?; // go from &Result<Expr> to &Expr
-        Ok::<T, MalError>(g(expr))
-    });
-
-    // Extract the first value (needed for fold)
-    let first = mapped
-        .next()
-        .ok_or_else(|| MalError::other_error("apply_all: no args!"))??;
-
-    // Fold the remaining values
-    mapped.try_fold(first, |acc, t| {
-        let v = t?;
-        Ok::<T, MalError>(f(acc, v))
-    })
+fn apply(mut args: Vec<Expr>, b: Builtin) -> MalResult<Expr> {
+    // NOTE to self: notice the mut args. thats only so I can call remove on the
+    // vec. This is needed because I want to own the data of the vec for
+    // processing. Without the mut I would only be able to borrow a value with a
+    // reference
+    match b {
+        Builtin::Unary(f) => f(args.remove(0)),
+        Builtin::Binary(f) => {
+            let first = args.remove(0);
+            args.into_iter().try_fold(first, |acc, x| f(acc, x))
+        }
+        Builtin::Nary(f) => f(&args[..]),
+    }
 }
 
-pub fn eval_as_fun(
-    expr: Expr,
-) -> MalResult<(
-    // TODO: make a better type for this
-    fn(i64, i64) -> i64,
-    for<'a> fn(&'a types::Expr) -> i64,
-    fn(i64) -> types::Expr,
-)> {
+pub fn eval_as_fun(expr: Expr) -> MalResult<Builtin> {
     // DESIGN: should evalAsFun know about OP_TABLE, or should eval?
     match expr {
-        Expr::Value(MalVal::BSymbol(s)) => Ok(OP_TABLE[s as usize]),
-        Expr::Value(MalVal::Symbol(s)) => panic!("{}: Not implemented yet!", s),
+        Expr::Value(MalVal::BSymbol(s)) => Ok(OP_TABLE[s as usize].clone()),
+        Expr::Value(MalVal::Symbol(s)) => {
+            MalError::unknown_ident(&format!("got: {}. Not implemented yet!", s))
+        }
         other => MalError::not_afun_error(&format!("got: {}. Not a function", other)),
     }
 }
 
-pub fn eval(input: &Expr) -> MalResult<Expr> {
+pub fn eval_as_val(expr: Expr) -> MalResult<MalVal> {
+    match eval(expr)? {
+        Expr::Value(v) => Ok(v),
+        other => MalError::other_error(&format!("got: {}. Expected value", other)),
+    }
+}
+
+pub fn eval(input: Expr) -> MalResult<Expr> {
     #[cfg(debug_assertions)]
     println!("expr: {:?}", input);
 
     let result = match input {
         Expr::Quoted(_tag, _expr) => panic!("Eval: Quoted: not implemented"),
 
-        Expr::Container(tag, es) => {
-            match tag {
-                ContainerKind::List => match es.first() {
-                    Some(fun) => {
-                        // START: change this to call evalAsFun and make that function
-                        let sym = eval(fun)?;
-                        let (prim_fn, project, inject) = eval_as_fun(sym)?;
-                        let args = &es[1..es.len()];
-                        // the recursive call
-                        let prim_args = args.iter().map(|a| eval(a)).collect::<Vec<_>>();
-                        let payload = apply_all(prim_args.iter(), prim_fn, project);
+        Expr::Container(cont) => {
+            match cont {
+                MalContainer::List(mut es) => {
+                    println!("ES: {:?}", es);
+                    if es.len() >= 2 {
+                        let fun = es.remove(0);
+                        let sym = eval(*fun)?;
+                        let prim_fn = eval_as_fun(sym)?;
 
-                        // now rebox based on the types
-                        payload.map(inject)
-                    }
-                    None => {
-                        // empty list
+                        // the recursive call
+                        let prim_args: Vec<MalResult<Expr>> =
+                            es.into_iter().map(|a| eval(*a)).collect::<Vec<_>>();
+                        let prim_args: MalResult<Vec<Expr>> = prim_args.into_iter().collect();
+                        prim_args.and_then(|p| apply(p, prim_fn))
+                    } else if es.len() == 1 {
+                        // a value
+                        eval(*es.remove(0))
+                    } else {
+                        // an empty list
                         Ok(Expr::list(vec![]))
                     }
-                },
-                ContainerKind::Vec => panic!("Eval: Vec: not implemented"),
+                }
+                MalContainer::Vector(_) => panic!("Vec not implemented"),
+                MalContainer::HashMap(_hmap) => panic!("Eval: HashMap: not implemented"),
             }
         }
-        Expr::HashMap(_hmap) => panic!("Eval: HashMap: not implemented"),
-        val => Ok(val.clone()),
+        // only other case are literals
+        val => {
+            println!("Val: {:?}", val);
+            Ok(val)
+        }
     };
+    println!("result: {:?}", result);
     result
 }
 
@@ -130,20 +136,6 @@ pub fn print(expr: &Expr) -> String {
             QuoteKind::Unquote => format!("(unquote {})", print(expr)),
             QuoteKind::SpliceUnquote => format!("(splice-unquote {})", print(expr)),
         },
-        Expr::Container(tag, es) => {
-            let res = es.iter().map(print).collect::<Vec<_>>().join(" ");
-            match tag {
-                ContainerKind::List => format!("({})", res),
-                ContainerKind::Vec => format!("[{}]", res),
-            }
-        }
-        Expr::HashMap(hmap) => {
-            let res = hmap
-                .iter()
-                .map(|(k, v)| format!("{} {}", k, v))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!("{{{}}}", res)
-        }
+        other => format!("{}", other),
     }
 }

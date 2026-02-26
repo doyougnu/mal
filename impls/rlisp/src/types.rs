@@ -6,21 +6,25 @@ pub enum MalError {
     UnknownIdent(String),
     SyntaxError(String),
     NotAFun(String),
+    TypeError(String),
     Other(String),
 }
 
 impl MalError {
-    pub fn unknown_ident(s: &str) -> Self {
-        MalError::UnknownIdent(String::from(s))
+    pub fn unknown_ident<T>(s: &str) -> MalResult<T> {
+        Err(MalError::UnknownIdent(String::from(s)))
     }
-    pub fn syntax_error(s: &str) -> Self {
-        MalError::SyntaxError(String::from(s))
+    pub fn syntax_error<T>(s: &str) -> MalResult<T> {
+        Err(MalError::SyntaxError(String::from(s)))
     }
-    pub fn other_error(s: &str) -> Self {
-        MalError::Other(String::from(s))
+    pub fn other_error<T>(s: &str) -> MalResult<T> {
+        Err(MalError::Other(String::from(s)))
     }
     pub fn not_afun_error<T>(s: &str) -> MalResult<T> {
         Err(MalError::NotAFun(String::from(s)))
+    }
+    pub fn type_error<T>(s: &str) -> MalResult<T> {
+        Err(MalError::TypeError(String::from(s)))
     }
 }
 
@@ -37,10 +41,17 @@ impl From<&MalError> for MalError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MalVal {
     Number(i64),
-    BSymbol(BuiltIn), // built in
+    BSymbol(BuiltIn), // built in symbols
     Symbol(String),
     String(String),
     Keyword(String),
+}
+
+#[derive(Clone)]
+pub enum Builtin {
+    Unary(fn(Expr) -> MalResult<Expr>),
+    Binary(fn(Expr, Expr) -> MalResult<Expr>),
+    Nary(fn(&[Expr]) -> MalResult<Expr>),
 }
 
 impl MalVal {
@@ -64,10 +75,12 @@ impl MalVal {
         MalVal::Keyword(s)
     }
 
-    pub fn as_i64(&self) -> i64 {
-        let die = |s: &str, v: &String| panic!("as_i64: panic: {} {}", s, v);
+    pub fn as_i64(&self) -> MalResult<i64> {
+        let die = |s: &str, v: &String| {
+            MalError::other_error(format!("as_i64: panic: {} {}", s, v).as_ref())
+        };
         match self {
-            MalVal::Number(i) => *i,
+            MalVal::Number(i) => Ok(*i),
             MalVal::Symbol(i) => die("Got Symbol", i),
             MalVal::BSymbol(i) => die("Got BSymbol", &format!("{:?}", i)),
             MalVal::String(i) => die("Got String", i),
@@ -107,16 +120,16 @@ pub enum QuoteKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ContainerKind {
-    List,
-    Vec,
+pub enum MalContainer {
+    List(Vec<Box<Expr>>),
+    Vector(Vec<Box<Expr>>),
+    HashMap(HashMap<MalVal, Box<Expr>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Value(MalVal),
-    Container(ContainerKind, Vec<Expr>),
-    HashMap(HashMap<MalVal, Box<Expr>>),
+    Container(MalContainer),
     Quoted(QuoteKind, Box<Expr>),
 }
 
@@ -124,18 +137,23 @@ impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Value(v) => write!(f, "{}", v),
-            Expr::Container(k, e) => {
+            Expr::Container(MalContainer::List(e)) => {
                 let ls = e
                     .iter()
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()
                     .join(" ");
-                match k {
-                    ContainerKind::List => write!(f, "({})", ls),
-                    ContainerKind::Vec => write!(f, "[{}]", ls),
-                }
+                write!(f, "({})", ls)
             }
-            Expr::HashMap(hmap) => {
+            Expr::Container(MalContainer::Vector(e)) => {
+                let ls = e
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                write!(f, "[{}]", ls)
+            }
+            Expr::Container(MalContainer::HashMap(hmap)) => {
                 let smap = hmap
                     .iter()
                     .map(|(k, v)| format!("{} {}", k, v))
@@ -176,15 +194,17 @@ impl Expr {
     }
 
     pub fn list(es: Vec<Expr>) -> Self {
-        Expr::Container(ContainerKind::List, es)
+        Expr::Container(MalContainer::List(
+            es.into_iter().map(|e| Box::new(e)).collect(),
+        ))
     }
 
     pub fn vector(es: Vec<Expr>) -> Self {
-        Expr::Container(ContainerKind::Vec, es)
+        Expr::Container(MalContainer::Vector(es.into_iter().map(Box::new).collect()))
     }
 
     pub fn hash_map(es: HashMap<MalVal, Box<Expr>>) -> Self {
-        Expr::HashMap(es)
+        Expr::Container(MalContainer::HashMap(es))
     }
 
     pub fn quote(expr: Expr) -> Self {
@@ -202,16 +222,19 @@ impl Expr {
     pub fn splice_unquote(expr: Expr) -> Self {
         Expr::Quoted(QuoteKind::SpliceUnquote, Box::new(expr))
     }
-    pub fn as_i64(expr: &Expr) -> i64 {
-        match expr {
+
+    pub fn as_i64(&self) -> MalResult<i64> {
+        match self {
             Expr::Value(v) => v.as_i64(),
-            _ => panic! {"Expr.as_i64: impossible"},
+            _ => MalError::type_error(format!("Wanted: i64, Got: {}", self).as_ref()),
         }
     }
 }
 
 #[repr(usize)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// This order is important and determines the lookup in lib::OP_TABLE
+// this must correspond one-for-one with that table
 pub enum BuiltIn {
     Add,
     Sub,
