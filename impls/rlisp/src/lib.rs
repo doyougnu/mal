@@ -1,10 +1,11 @@
 use rustyline::{DefaultEditor, Result};
 
 pub mod constants;
+pub mod env;
 pub mod reader;
 pub mod types;
 
-use crate::types::*;
+use crate::{env::ReplEnv, types::*};
 use constants::HISTORY;
 
 fn add(l: Expr, r: Expr) -> MalResult<Expr> {
@@ -31,11 +32,11 @@ fn mul(l: Expr, r: Expr) -> MalResult<Expr> {
     Ok(Expr::number(li * lr))
 }
 
-static OP_TABLE: [Builtin; 4] = [
-    Builtin::Binary(add),
-    Builtin::Binary(sub),
-    Builtin::Binary(mul),
-    Builtin::Binary(div),
+static OP_TABLE: [MalVal; 4] = [
+    MalVal::Lambda(Fun::Binary(add)),
+    MalVal::Lambda(Fun::Binary(sub)),
+    MalVal::Lambda(Fun::Binary(mul)),
+    MalVal::Lambda(Fun::Binary(div)),
 ];
 
 pub fn read(rl: &mut DefaultEditor) -> Result<String> {
@@ -45,40 +46,39 @@ pub fn read(rl: &mut DefaultEditor) -> Result<String> {
     rl.readline("user> ")
 }
 
-fn apply(mut args: Vec<Expr>, b: Builtin) -> MalResult<Expr> {
+fn apply(mut args: Vec<Expr>, b: Fun) -> MalResult<Expr> {
     // NOTE to self: notice the mut args. thats only so I can call remove on the
     // vec. This is needed because I want to own the data of the vec for
     // processing. Without the mut I would only be able to borrow a value with a
     // reference
     match b {
-        Builtin::Unary(f) => f(args.remove(0)),
-        Builtin::Binary(f) => {
+        Fun::Unary(f) => f(args.remove(0)),
+        Fun::Binary(f) => {
             let first = args.remove(0);
             args.into_iter().try_fold(first, |acc, x| f(acc, x))
         }
-        Builtin::Nary(f) => f(&args[..]),
+        Fun::Nary(f) => f(&args[..]),
     }
 }
 
-pub fn eval_as_fun(expr: Expr) -> MalResult<Builtin> {
+pub fn eval_as_fun(env: &ReplEnv, expr: Expr) -> MalResult<Fun> {
     // DESIGN: should evalAsFun know about OP_TABLE, or should eval?
     match expr {
+        // TODO: builtins should pre-populate the environment
         Expr::Value(MalVal::BSymbol(s)) => Ok(OP_TABLE[s as usize].clone()),
-        Expr::Value(MalVal::Symbol(s)) => {
-            MalError::unknown_ident(&format!("got: {}. Not implemented yet!", s))
-        }
+        Expr::Value(MalVal::Symbol(s)) => env.get(&s),
         other => MalError::not_afun_error(&format!("got: {}. Not a function", other)),
     }
 }
 
-pub fn eval_as_val(expr: Expr) -> MalResult<MalVal> {
-    match eval(expr)? {
+pub fn eval_as_val(env: &ReplEnv, expr: Expr) -> MalResult<MalVal> {
+    match eval(env, expr)? {
         Expr::Value(v) => Ok(v),
         other => MalError::other_error(&format!("got: {}. Expected value", other)),
     }
 }
 
-pub fn eval(input: Expr) -> MalResult<Expr> {
+pub fn eval(env: &ReplEnv, input: Expr) -> MalResult<Expr> {
     #[cfg(debug_assertions)]
     println!("expr: {:?}", input);
 
@@ -91,17 +91,17 @@ pub fn eval(input: Expr) -> MalResult<Expr> {
                     println!("ES: {:?}", es);
                     if es.len() >= 2 {
                         let fun = es.remove(0);
-                        let sym = eval(*fun)?;
-                        let prim_fn = eval_as_fun(sym)?;
+                        let sym = eval(env, *fun)?;
+                        let prim_fn = eval_as_fun(env, sym)?;
 
                         // the recursive call
                         let prim_args: Vec<MalResult<Expr>> =
-                            es.into_iter().map(|a| eval(*a)).collect::<Vec<_>>();
+                            es.into_iter().map(|a| eval(env, *a)).collect::<Vec<_>>();
                         let prim_args: MalResult<Vec<Expr>> = prim_args.into_iter().collect();
                         prim_args.and_then(|p| apply(p, prim_fn))
                     } else if es.len() == 1 {
                         // a value
-                        eval(*es.remove(0))
+                        eval(env, *es.remove(0))
                     } else {
                         // an empty list
                         Ok(Expr::list(vec![]))

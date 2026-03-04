@@ -41,14 +41,14 @@ impl From<&MalError> for MalError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MalVal {
     Number(i64),
-    BSymbol(BuiltIn), // built in symbols
+    Lambda(Fun), // built in symbols
     Symbol(String),
     String(String),
     Keyword(String),
 }
 
 #[derive(Clone)]
-pub enum Builtin {
+pub enum Fun {
     Unary(fn(Expr) -> MalResult<Expr>),
     Binary(fn(Expr, Expr) -> MalResult<Expr>),
     Nary(fn(&[Expr]) -> MalResult<Expr>),
@@ -63,8 +63,8 @@ impl MalVal {
         MalVal::Symbol(s)
     }
 
-    pub fn builtin_symbol(s: BuiltIn) -> Self {
-        MalVal::BSymbol(s)
+    pub fn builtin_symbol(s: Fun) -> Self {
+        MalVal::Lambda(s)
     }
 
     pub fn string(s: String) -> Self {
@@ -82,7 +82,7 @@ impl MalVal {
         match self {
             MalVal::Number(i) => Ok(*i),
             MalVal::Symbol(i) => die("Got Symbol", i),
-            MalVal::BSymbol(i) => die("Got BSymbol", &format!("{:?}", i)),
+            MalVal::Lambda(i) => die("Got Lambda", &format!("{:?}", i)),
             MalVal::String(i) => die("Got String", i),
             MalVal::Keyword(i) => die("Got Keyword", i),
         }
@@ -91,7 +91,7 @@ impl MalVal {
     pub fn as_string(&self) -> String {
         match self {
             MalVal::Symbol(i) => i.clone(),
-            MalVal::BSymbol(i) => format!("{:?}", i),
+            MalVal::Lambda(i) => format!("{:?}", i),
             MalVal::String(i) => i.clone(),
             MalVal::Keyword(i) => i.clone(),
             MalVal::Number(i) => i.to_string(),
@@ -104,7 +104,7 @@ impl fmt::Display for MalVal {
         match self {
             MalVal::Number(n) => write!(f, "{}", n),
             MalVal::Symbol(s) => write!(f, "{}", s),
-            MalVal::BSymbol(s) => write!(f, "{}", format!("{:?}", s)),
+            MalVal::Lambda(s) => write!(f, "{}", format!("{:?}", s)),
             MalVal::String(s) => write!(f, "\"{}\"", s),
             MalVal::Keyword(k) => write!(f, ":{}", k),
         }
@@ -181,7 +181,7 @@ impl Expr {
         Expr::Value(MalVal::symbol(s))
     }
 
-    pub fn builtin_symbol(s: BuiltIn) -> Self {
+    pub fn builtin_symbol(s: Fun) -> Self {
         Expr::Value(MalVal::builtin_symbol(s))
     }
 
