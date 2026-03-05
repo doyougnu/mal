@@ -2,42 +2,12 @@ use rustyline::{DefaultEditor, Result};
 
 pub mod constants;
 pub mod env;
+pub mod prims;
 pub mod reader;
 pub mod types;
 
 use crate::{env::ReplEnv, types::*};
 use constants::HISTORY;
-
-fn add(l: Expr, r: Expr) -> MalResult<Expr> {
-    let li = l.as_i64()?;
-    let lr = r.as_i64()?;
-    Ok(Expr::number(li + lr))
-}
-
-fn sub(l: Expr, r: Expr) -> MalResult<Expr> {
-    let li = l.as_i64()?;
-    let lr = r.as_i64()?;
-    Ok(Expr::number(li - lr))
-}
-
-fn div(l: Expr, r: Expr) -> MalResult<Expr> {
-    let li = l.as_i64()?;
-    let lr = r.as_i64()?;
-    Ok(Expr::number(li / lr))
-}
-
-fn mul(l: Expr, r: Expr) -> MalResult<Expr> {
-    let li = l.as_i64()?;
-    let lr = r.as_i64()?;
-    Ok(Expr::number(li * lr))
-}
-
-static OP_TABLE: [MalVal; 4] = [
-    MalVal::Lambda(Fun::Binary(add)),
-    MalVal::Lambda(Fun::Binary(sub)),
-    MalVal::Lambda(Fun::Binary(mul)),
-    MalVal::Lambda(Fun::Binary(div)),
-];
 
 pub fn read(rl: &mut DefaultEditor) -> Result<String> {
     if rl.load_history(HISTORY).is_err() {
@@ -65,7 +35,7 @@ pub fn eval_as_fun(env: &ReplEnv, expr: Expr) -> MalResult<Fun> {
     // DESIGN: should evalAsFun know about OP_TABLE, or should eval?
     match expr {
         // TODO: builtins should pre-populate the environment
-        Expr::Value(MalVal::BSymbol(s)) => Ok(OP_TABLE[s as usize].clone()),
+        Expr::Value(MalVal::Lambda(f)) => Ok(env.get(f)),
         Expr::Value(MalVal::Symbol(s)) => env.get(&s),
         other => MalError::not_afun_error(&format!("got: {}. Not a function", other)),
     }

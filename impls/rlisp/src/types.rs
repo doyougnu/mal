@@ -40,18 +40,35 @@ impl From<&MalError> for MalError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MalVal {
-    Number(i64),
-    Lambda(Fun), // built in symbols
-    Symbol(String),
+    Number(i64), // START: Need a real function case for closures, and a case for primops
+    Lambda(),    // built in symbols with an index to the fn in env
+    Symbol(SIdx),
     String(String),
     Keyword(String),
 }
 
-#[derive(Clone)]
-pub enum Fun {
-    Unary(fn(Expr) -> MalResult<Expr>),
-    Binary(fn(Expr, Expr) -> MalResult<Expr>),
-    Nary(fn(&[Expr]) -> MalResult<Expr>),
+// TODO: can we just have n-ary functions?
+// TODO: implement my own displayer
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SIdx(u32);
+
+impl SIdx {
+    pub const ADD: SIdx = SIdx(0);
+    pub const SUB: SIdx = SIdx(1);
+    pub const DIV: SIdx = SIdx(2);
+    pub const MUL: SIdx = SIdx(3);
+}
+
+impl fmt::Display for Fun {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            0 => write!(f, "+"),
+            1 => write!(f, "-"),
+            2 => write!(f, "*"),
+            3 => write!(f, "/"),
+            _ => write!(f, "???"),
+        }
+    }
 }
 
 impl MalVal {
